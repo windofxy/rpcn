@@ -73,9 +73,13 @@ impl Client {
 
 	fn send_email(&self, email_to_send: Message) -> Result<(), lettre::transport::smtp::Error> {
 		let smtp_url = self.config.read().get_email_url();
+		let hello_name = email_recipient_from_url(&smtp_url)
+			.ok()
+			.and_then(|addr| addr.split('@').nth(1).map(|domain| domain.to_string()))
+			.unwrap_or_else(|| "np.rpcs3.net".to_string());
 
 		let smtp_client = SmtpTransport::from_url(&smtp_url)?
-			.hello_name(lettre::transport::smtp::extension::ClientId::Domain("np.rpcs3.net".to_string()))
+			.hello_name(lettre::transport::smtp::extension::ClientId::Domain(hello_name))
 			.authentication(vec![Mechanism::Plain])
 			.build();
 
@@ -87,7 +91,7 @@ impl Client {
 		let message_id = format!("<{}.{}@rpcs3.net>", Client::get_timestamp_nanos(), EMAIL_ID_DISPENSER.fetch_add(1, Ordering::SeqCst));
 		let email_addr = email_recipient_from_url(&self.config.read().get_email_url())?;
 		let email_mailbox = email_addr.parse().map_err(|e| format!("Error parsing email({}): {}", email_addr, e))?;
-		tracing::info!("Email from ACI-CN <{}> to <{}>", email_mailbox, email_mailbox);
+		tracing::error!("Email from ACI-CN <{}> to <{}>", email_mailbox, email_mailbox);
 
 		let email_to_send = Message::builder()
 			.to(Mailbox::new(None, email_mailbox.clone()))
