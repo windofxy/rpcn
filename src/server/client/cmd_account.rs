@@ -90,7 +90,7 @@ impl Client {
 	fn send_email_template(&self, _email_addr: &str, _email_username: &str, subject: &str, body: String) -> Result<(), String> {
 		let message_id = format!("<{}.{}@rpcs3.net>", Client::get_timestamp_nanos(), EMAIL_ID_DISPENSER.fetch_add(1, Ordering::SeqCst));
 		let email_addr = email_recipient_from_url(&self.config.read().get_email_url())?;
-		let email_mailbox = email_addr.parse().map_err(|e| format!("Error parsing email({}): {}", email_addr, e))?;
+		let email_mailbox: lettre::Address = email_addr.parse().map_err(|e| format!("Error parsing email({}): {}", email_addr, e))?;
 
 		let email_to_send = Message::builder()
 			.to(Mailbox::new(None, email_mailbox.clone()))
