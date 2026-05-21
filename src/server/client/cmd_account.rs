@@ -14,6 +14,51 @@ fn strip_email(email: &str) -> String {
 	format!("{}@{}", alias_split[0], tokens[1])
 }
 
+fn decode_url_component(input: &str) -> Result<String, String> {
+	let mut decoded = Vec::with_capacity(input.len());
+	let bytes = input.as_bytes();
+	let mut index = 0;
+
+	while index < bytes.len() {
+		if bytes[index] == b'%' {
+			if index + 2 >= bytes.len() {
+				return Err("EmailUrl contains an invalid percent-encoded mailbox".to_string());
+			}
+
+			let hex_value = std::str::from_utf8(&bytes[index + 1..index + 3])
+				.map_err(|_| "EmailUrl contains an invalid percent-encoded mailbox".to_string())?;
+			let byte = u8::from_str_radix(hex_value, 16)
+				.map_err(|_| "EmailUrl contains an invalid percent-encoded mailbox".to_string())?;
+			decoded.push(byte);
+			index += 3;
+		} else {
+			decoded.push(bytes[index]);
+			index += 1;
+		}
+	}
+
+	String::from_utf8(decoded).map_err(|_| "EmailUrl mailbox is not valid UTF-8".to_string())
+}
+
+fn email_recipient_from_url(email_url: &str) -> Result<String, String> {
+	let scheme_pos = email_url.find("://").ok_or_else(|| "EmailUrl is missing a URL scheme".to_string())?;
+	let authority_and_path = &email_url[scheme_pos + 3..];
+	let authority_end = authority_and_path.find(|c| ['/', '?', '#'].contains(&c)).unwrap_or(authority_and_path.len());
+	let authority = &authority_and_path[..authority_end];
+	let userinfo_end = authority
+		.rfind('@')
+		.ok_or_else(|| "EmailUrl must include a mailbox before the SMTP host".to_string())?;
+	let userinfo = &authority[..userinfo_end];
+	let mailbox_raw = userinfo.split_once(':').map_or(userinfo, |(mailbox, _)| mailbox);
+	let mailbox = decode_url_component(mailbox_raw)?;
+
+	mailbox
+		.parse::<lettre::Address>()
+		.map_err(|e| format!("EmailUrl mailbox is invalid({}): {}", mailbox, e))?;
+
+	Ok(mailbox)
+}
+
 static EMAIL_ID_DISPENSER: AtomicU64 = AtomicU64::new(1);
 
 impl Client {
@@ -38,14 +83,12 @@ impl Client {
 		Ok(())
 	}
 
-	fn send_email_template(&self, email_addr: &str, email_username: &str, subject: &str, body: String) -> Result<(), String> {
+	fn send_email_template(&self, _email_addr: &str, _email_username: &str, subject: &str, body: String) -> Result<(), String> {
 		let message_id = format!("<{}.{}@rpcs3.net>", Client::get_timestamp_nanos(), EMAIL_ID_DISPENSER.fetch_add(1, Ordering::SeqCst));
+		let email_addr = email_recipient_from_url(&self.config.read().get_email_url())?;
 
 		let email_to_send = Message::builder()
-			.to(Mailbox::new(
-				Some(email_username.to_owned()),
-				email_addr.parse().map_err(|e| format!("Error parsing email({}): {}", email_addr, e))?,
-			))
+			.to(Mailbox::new(None, email_addr.parse().map_err(|e| format!("Error parsing email({}): {}", email_addr, e))?))
 			.from("RPCN <np@rpcs3.net>".parse().unwrap())
 			.subject(subject)
 			.header(lettre::message::header::ContentType::TEXT_PLAIN)
@@ -56,14 +99,19 @@ impl Client {
 	}
 
 	fn send_token_mail(&self, email_addr: &str, npid: &str, token: &str) -> Result<(), String> {
-		self.send_email_template(email_addr, npid, "Your token for RPCN", format!("Your token for username {} is:\n{}", npid, token))
+		self.send_email_template(
+			email_addr,
+			npid,
+			&format!("{}'s token for RPCN", npid),
+			format!("Your token for username {} is:\n{}", npid, token),
+		)
 	}
 
 	fn send_reset_token_mail(&self, email_addr: &str, npid: &str, reset_token: &str) -> Result<(), String> {
 		self.send_email_template(
 			email_addr,
 			npid,
-			"Your password reset code for RPCN",
+			&format!("{}'s password reset code for RPCN", npid),
 			format!("Your password reset code for username {} is:\n{}\n\nNote that this code can only be used once!", npid, reset_token),
 		)
 	}
