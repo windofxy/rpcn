@@ -107,7 +107,7 @@ impl Client {
 		self.send_email_template(
 			email_addr,
 			npid,
-			&format!("{}'s token for RPCN", npid),
+			&format!("{}'s token for ACI-CN", npid),
 			format!("Your token for username {} is:\n{}", npid, token),
 		)
 	}
@@ -116,7 +116,7 @@ impl Client {
 		self.send_email_template(
 			email_addr,
 			npid,
-			&format!("{}'s password reset code for RPCN", npid),
+			&format!("{}'s password reset code for ACI-CN", npid),
 			format!("Your password reset code for username {} is:\n{}\n\nNote that this code can only be used once!", npid, reset_token),
 		)
 	}
